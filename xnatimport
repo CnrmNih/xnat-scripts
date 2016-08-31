@@ -1,0 +1,6 @@
+#/bin/bash
+source $(dirname $0)/functions.sh
+
+initialize $1 $2 $3 $4 $5
+authenticate
+walkFolder
