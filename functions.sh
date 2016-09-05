@@ -1,5 +1,5 @@
 initialize() {
-    [[ $# == 5 ]] || { echo Insufficient number of arguments: $#; showHelp; exit -1; }
+    [[ $# == 4 || $# == 5 ]] || { echo Incorrent number of arguments: $#; showHelp; exit -1; }
     TIMESTAMP=$(date +%Y%m%d%H%M%S)
     [[ -z WORK ]] || { WORK=$(echo ~)/xnat/${TIMESTAMP}; echo Setting work folder to ${WORK}.; }
     [[ -e ${WORK} ]] || { mkdir -p ${WORK}; }
@@ -7,12 +7,16 @@ initialize() {
     USER=${2}
     FOLDER=${3}
     PROJECT=${4}
-    SUBJECT=${5}
-    echo User ${USER} is sending to ${ADDRESS} from the folder ${FOLDER}: project ${PROJECT}, subject ${SUBJECT}
+    if [[ -z ${5} ]]; then
+        SUBJECT=${5}
+        echo ${USER} is sending data for subject ${SUBJECT} in ${FOLDER} to project ${PROJECT} on the server ${ADDRESS}
+    else
+        echo ${USER} is sending data for all subjects in ${FOLDER} to project ${PROJECT} on the server ${ADDRESS}
+    fi
 }
 
 showHelp() {
-    echo Proper usage: xnatimport XNAT_URL XNAT_USER FOLDER PROJECT SUBJECT
+    echo Proper usage: xnatimport XNAT_URL XNAT_USER FOLDER PROJECT [SUBJECT]
 }
 
 # Creates the cookie file containing validated JSESSIONID.
@@ -43,8 +47,8 @@ commitSession() {
     rm ${SESSION_OUT}
 }
 
-walkFolder() {
-    for SESSION_FOLDER in $(find ${FOLDER} -mindepth 1 -maxdepth 1 -type d); do
+walkSessionFolders() {
+    for SESSION_FOLDER in $(find ${SUBJECT_FOLDER} -mindepth 1 -maxdepth 1 -type d); do
         # Save for dev purposes: creates new session label with each operation.
         # SESSION=$(basename ${SESSION_FOLDER})-${TIMESTAMP}
         SESSION=$(basename ${SESSION_FOLDER})
@@ -62,5 +66,16 @@ walkFolder() {
         done
         commitSession
     done
+}
+
+walkSubjectFolders() {
+    for SUBJECT_FOLDER in $(find ${FOLDER} -mindepth 1 -maxdepth 1 -type d); do
+        SUBJECT=$(basename ${SUBJECT_FOLDER})
+        walkSessionFolders
+    done
+}
+
+walkFolders() {
+    [[ -n ${SUBJECT} ]] && { SUBJECT_FOLDER=${FOLDER}; walkSessionFolders; } || { walkSubjectFolders; }
 }
 
