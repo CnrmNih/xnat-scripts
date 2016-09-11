@@ -7,11 +7,11 @@ initialize() {
     USER=${2}
     FOLDER=${3}
     PROJECT=${4}
-    if [[ -z ${5} ]]; then
+    if [[ -n ${5} ]]; then
         SUBJECT=${5}
         echo ${USER} is sending data for subject ${SUBJECT} in ${FOLDER} to project ${PROJECT} on the server ${ADDRESS}
     else
-        echo ${USER} is sending data for all subjects in ${FOLDER} to project ${PROJECT} on the server ${ADDRESS}
+        echo ${USER} is sending data for all subjects/sessions in ${FOLDER} to project ${PROJECT} on the server ${ADDRESS}
     fi
 }
 
@@ -28,12 +28,19 @@ authenticate() {
             echo There was an error with your username or password. Return code: ${STATUS}.
             exit -1
         fi
+        echo Authenticated, cookies stored in file ${WORK}/.cookies
+    elif [[ ${STATUS} == 502 ]]; then
+        echo Got status 502, which usually indicates that the targetted site is down or unreachable.
+        exit -1
+    elif [[ ${STATUS} != 200 ]]; then
+        echo Got status ${STATUS}, which is weird. You should look into what\'s going on.
+        exit -1
     fi
 }
 
 # Send the DICOM scan stored in the indicated zip file to the specified XNAT server.
 sendScan() {
-    URL="${ADDRESS}/data/services/import?import-handler=DICOM-zip&PROJECT_ID=${PROJECT}&SUBJECT_ID=${SUBJECT}&EXPT_LABEL=${SESSION}&rename=true&prevent_anon=true&prevent_auto_commit=true&autoArchive=true&SOURCE=script"
+    URL="${ADDRESS}/data/services/import?import-handler=DICOM-zip&PROJECT_ID=${PROJECT}&SUBJECT_ID=${SUBJECT_ID}&EXPT_LABEL=${SESSION}&rename=true&prevent_anon=true&prevent_auto_commit=true&autoArchive=true&SOURCE=script"
     STATUS=$(curl -s --cookie ${WORK}/.cookies --request POST --output ${SESSION_OUT} -w "%{http_code}" --form "file=@${TARGET}.zip" ${URL})
     if [[ ${STATUS} != 200 ]]; then
         echo An error occurred while sending ${TARGET}.zip. Status code ${STATUS}, output: $(cat ${SESSION_OUT})
@@ -55,12 +62,17 @@ walkSessionFolders() {
         SESSION_PATH=${WORK}/${SESSION}
         SESSION_LOG=${SESSION_PATH}.log
         SESSION_OUT=${SESSION_PATH}.txt
+        if [[ -n ${SUBJECT} ]]; then
+            SUBJECT_ID=${SUBJECT}
+        else
+            SUBJECT_ID=$(echo ${SESSION} | cut -f 1 -d _)
+        fi
         echo Project, Subject, Session, Target, Size > ${SESSION_LOG}
         echo Found session ${SESSION} in folder $(dirname ${SESSION_FOLDER})
         for SERIES_FOLDER in $(find ${SESSION_FOLDER} -mindepth 1 -maxdepth 1 -type d); do
             TARGET=${SESSION_PATH}-$(basename ${SERIES_FOLDER})
             zip -q ${TARGET}.zip $(find ${SERIES_FOLDER} -type f -name *.dcm)
-            echo ${PROJECT}, ${SUBJECT}, ${SESSION}, ${TARGET}, $(stat --printf="%s" ${TARGET}.zip) >> ${SESSION_LOG}
+            echo ${PROJECT}, ${SUBJECT_ID}, ${SESSION}, ${TARGET}, $(stat --printf="%s" ${TARGET}.zip) >> ${SESSION_LOG}
             sendScan
             rm ${TARGET}.zip
         done
@@ -76,6 +88,6 @@ walkSubjectFolders() {
 }
 
 walkFolders() {
-    [[ -n ${SUBJECT} ]] && { SUBJECT_FOLDER=${FOLDER}; walkSessionFolders; } || { walkSubjectFolders; }
+    [[ -n ${SUBJECT} ]] && { walkSubjectFolders; } || { SUBJECT_FOLDER=${FOLDER}; walkSessionFolders; }
 }
 
